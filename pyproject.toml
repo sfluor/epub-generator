@@ -1,6 +1,6 @@
 [project]
 name = "epubgen"
-version = "0.1.0"
+version = "0.2.0"
 authors = [{ name = "Sami Tabet" }]
 description = "Tiny library to programmatically generate .epub files"
 readme = "README.md"
