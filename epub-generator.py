@@ -1,4 +1,3 @@
-from sys import meta_path
 from zipfile import ZipFile
 from datetime import datetime
 import xml.etree.ElementTree as ET
@@ -8,6 +7,7 @@ TOC_PATH = "toc.xhtml"
 PACKAGE_PATH = CONTENT_ROOT + "package.opf"
 TOC_ID = "toc"
 TOC_NAME = "Table of contents"
+CSS_FILE = "stylesheet.css"
 
 
 def xml_to_str(xml: ET.Element) -> str:
@@ -15,20 +15,29 @@ def xml_to_str(xml: ET.Element) -> str:
 
 
 class EPUB:
-    def __init__(self, title: str, author: str, language: str):
+    def __init__(self, title: str, author: str, language: str, css="", rtl=False):
         self.metadata: ET.Element = self._generate_pkg_metadata(title, author, language)
         self.manifest: ET.Element = ET.Element("manifest")
-        self.spine: ET.Element = ET.Element("spine")
+        self.rtl: bool = rtl
+        spine_attrs = {}
+        if self.rtl:
+            spine_attrs["page-progression-direction"] = "rtl"
+        self.spine: ET.Element = ET.Element("spine", attrib=spine_attrs)
         self.toc = ET.Element("ol")
+        self.css = css
 
         # Add the table of contents to the spine and the manifest
         self._add_to_manifest_and_spine(TOC_ID, TOC_PATH, properties="nav")
 
         self.page_counts: int = 0
-        self.contents: list[tuple[str, str]] = [
+        self.contents: list[tuple[str, str | bytes]] = [
             ("mimetype", "application/epub+zip"),
             ("META-INF/container.xml", self._generate_container()),
         ]
+
+        if self.css:
+            self.contents.append((CONTENT_ROOT + CSS_FILE, self.css))
+            self._add_to_manifest("stylesheet", CSS_FILE, "text/css")
 
     def _generate_container(self) -> str:
         container = ET.Element(
@@ -49,47 +58,58 @@ class EPUB:
         )
         return xml_to_str(container)
 
+    def _add_to_manifest(self, id, path, type, **kwargs):
+        ET.SubElement(
+            self.manifest,
+            "item",
+            attrib={
+                "id": id,
+                "href": path,
+                "media-type": type,
+                **kwargs,
+            },
+        )
+
     def _current_page_id_and_path(self) -> tuple[str, str]:
         page_id = f"page{self.page_counts}"
         path = f"{page_id}.xhtml"
         return (page_id, path)
 
-    def insert_content_marker(self, title: str):
-        li = ET.Element("li")
-        _, path = self._current_page_id_and_path()
-        link = ET.SubElement(li, "a", href=path)
-        link.text = title
-        self.toc.append(li)
-
     def _add_to_manifest_and_spine(self, page_id: str, path: str, **kwargs):
-        ET.SubElement(
-            self.manifest,
-            "item",
-            attrib={
-                "id": page_id,
-                "href": path,
-                "media-type": "application/xhtml+xml",
-                **kwargs,
-            },
-        )
-
+        self._add_to_manifest(page_id, path, "application/xhtml+xml", **kwargs)
         ET.SubElement(self.spine, "itemref", idref=page_id)
 
-    def add_page(self, content: str):
+    def add_image(self, id: str, path: str, image_content: bytes):
+        type = os.path.splitext(path)[1]
+        self._add_to_manifest(id, path, "image/" + type)
+        self.contents.append((CONTENT_ROOT + path, image_content))
+
+    def add_page(self, content: ET.Element, toc_title=None):
         self.page_counts += 1
         page_id, path = self._current_page_id_and_path()
 
-        page_t = ET.Element("html", xmlns="http://www.w3.org/1999/xhtml")
+        page_t = ET.Element(
+            "html",
+            xmlns="http://www.w3.org/1999/xhtml",
+            dir=("rtl" if self.rtl else "ltr"),
+        )
         head_t = ET.SubElement(page_t, "head")
         title_t = ET.SubElement(head_t, "title")
         title_t.text = page_id
 
+        ET.SubElement(head_t, "link", rel="stylesheet", type="text/css", href=CSS_FILE)
+
         body_t = ET.SubElement(page_t, "body")
-        paragraph_t = ET.SubElement(body_t, "p")
-        paragraph_t.text = content
+        body_t.append(content)
 
         self.contents.append((CONTENT_ROOT + path, xml_to_str(page_t)))
         self._add_to_manifest_and_spine(page_id, path)
+
+        if toc_title is not None:
+            li = ET.Element("li")
+            link = ET.SubElement(li, "a", href=path)
+            link.text = toc_title
+            self.toc.append(li)
 
     # Returns the path of the table of contents
     def _generate_toc(self) -> str:
@@ -173,9 +193,11 @@ class EPUB:
 
 if __name__ == "__main__":
     book = EPUB("Test", "author-test", "en")
-    book.add_page("first-page" + 10000 * "a")
-    book.insert_content_marker("First chapter")
-    book.add_page("second-page")
-    book.add_page("third-page")
-    book.insert_content_marker("Second chapter")
+    first_page = ET.Element("p")
+    first_page.text = "first-page" + 10000 * "hello "
+    book.add_page(first_page, toc_title="First chapter")
+
+    second_page = ET.Element("p")
+    second_page.text = "second-page" + 10000 * "good morning ! "
+    book.add_page(second_page, toc_title="Second chapter")
     book.generate_epub("test.epub")
