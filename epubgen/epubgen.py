@@ -34,17 +34,20 @@ class EPUB:
     - add_image: embed images in the EPUB
     - generate_epub: generate the EPUB file
     """
-    def __init__(self, title: str, author: str, language: str, id: str, css="", rtl=False):
+
+    def __init__(
+        self, title: str, author: str, language: str, id: str, css="", rtl=False
+    ):
+        self.id: str = id
+        self.rtl: bool = rtl
         self.metadata: ET.Element = self._generate_pkg_metadata(title, author, language)
         self.manifest: ET.Element = ET.Element("manifest")
-        self.rtl: bool = rtl
         spine_attrs = {}
         if self.rtl:
             spine_attrs["page-progression-direction"] = "rtl"
         self.spine: ET.Element = ET.Element("spine", attrib=spine_attrs)
         self.toc = ET.Element("ol")
         self.css = css
-        self.id = id
 
         # Add the table of contents to the spine and the manifest
         self._add_to_manifest_and_spine(TOC_ID, TOC_PATH, properties="nav")
@@ -212,7 +215,6 @@ class EPUB:
             link = ET.SubElement(li, "a", href=path)
             link.text = toc_title
             self.toc.append(li)
-
 
     def generate_epub(self, path: str):
         """
