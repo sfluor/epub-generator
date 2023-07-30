@@ -1,3 +1,4 @@
+import os
 from zipfile import ZipFile
 from datetime import datetime
 import xml.etree.ElementTree as ET
@@ -15,7 +16,25 @@ def xml_to_str(xml: ET.Element) -> str:
 
 
 class EPUB:
-    def __init__(self, title: str, author: str, language: str, css="", rtl=False):
+    """
+    A class used to represent an EPUB being built
+
+    Parameters
+    ----------
+    - title: the title of the EPUB
+    - author: the author of the EPUB
+    - language: the main language of the generated EPUB
+    - id: a public identifier for the EPUB
+    - css: optional CSS to provide to tweak the presentation of the pages
+    - rtl: to enable the "right to left" reading direction mode
+
+    Methods
+    -------
+    - add_page: add content to the EPUB
+    - add_image: embed images in the EPUB
+    - generate_epub: generate the EPUB file
+    """
+    def __init__(self, title: str, author: str, language: str, id: str, css="", rtl=False):
         self.metadata: ET.Element = self._generate_pkg_metadata(title, author, language)
         self.manifest: ET.Element = ET.Element("manifest")
         self.rtl: bool = rtl
@@ -25,6 +44,7 @@ class EPUB:
         self.spine: ET.Element = ET.Element("spine", attrib=spine_attrs)
         self.toc = ET.Element("ol")
         self.css = css
+        self.id = id
 
         # Add the table of contents to the spine and the manifest
         self._add_to_manifest_and_spine(TOC_ID, TOC_PATH, properties="nav")
@@ -79,38 +99,6 @@ class EPUB:
         self._add_to_manifest(page_id, path, "application/xhtml+xml", **kwargs)
         ET.SubElement(self.spine, "itemref", idref=page_id)
 
-    def add_image(self, id: str, path: str, image_content: bytes):
-        type = os.path.splitext(path)[1]
-        self._add_to_manifest(id, path, "image/" + type)
-        self.contents.append((CONTENT_ROOT + path, image_content))
-
-    def add_page(self, content: ET.Element, toc_title=None):
-        self.page_counts += 1
-        page_id, path = self._current_page_id_and_path()
-
-        page_t = ET.Element(
-            "html",
-            xmlns="http://www.w3.org/1999/xhtml",
-            dir=("rtl" if self.rtl else "ltr"),
-        )
-        head_t = ET.SubElement(page_t, "head")
-        title_t = ET.SubElement(head_t, "title")
-        title_t.text = page_id
-
-        ET.SubElement(head_t, "link", rel="stylesheet", type="text/css", href=CSS_FILE)
-
-        body_t = ET.SubElement(page_t, "body")
-        body_t.append(content)
-
-        self.contents.append((CONTENT_ROOT + path, xml_to_str(page_t)))
-        self._add_to_manifest_and_spine(page_id, path)
-
-        if toc_title is not None:
-            li = ET.Element("li")
-            link = ET.SubElement(li, "a", href=path)
-            link.text = toc_title
-            self.toc.append(li)
-
     # Returns the path of the table of contents
     def _generate_toc(self) -> str:
         html = ET.Element(
@@ -159,7 +147,7 @@ class EPUB:
         metadata = ET.Element("metadata")
 
         identifier_t = ET.SubElement(metadata, "dc:identifier", id="pub-identifier")
-        identifier_t.text = "generated-id"
+        identifier_t.text = self.id
 
         title_t = ET.SubElement(metadata, "dc:title")
         title_t.text = title
@@ -180,7 +168,56 @@ class EPUB:
 
         return metadata
 
+    def add_image(self, id: str, path: str, image_content: bytes):
+        """
+        Embeds an image to the epub that can then be referenced using the provided path.
+
+        - id: the image ID as a string
+        - path: the image path in the EPUB as a string (should contain a valid image extension)
+        - image_content: the raw image content as bytes
+        """
+        type = os.path.splitext(path)[1]
+        self._add_to_manifest(id, path, "image/" + type)
+        self.contents.append((CONTENT_ROOT + path, image_content))
+
+    def add_page(self, content: ET.Element, toc_title=None):
+        """
+        Add a new page to the EPUB.
+
+        - content: the HTML content of the page to add
+        - [toc_title]: optional, if provided it will add a reference to this page to the table of contents.
+        """
+        self.page_counts += 1
+        page_id, path = self._current_page_id_and_path()
+
+        page_t = ET.Element(
+            "html",
+            xmlns="http://www.w3.org/1999/xhtml",
+            dir=("rtl" if self.rtl else "ltr"),
+        )
+        head_t = ET.SubElement(page_t, "head")
+        title_t = ET.SubElement(head_t, "title")
+        title_t.text = page_id
+
+        ET.SubElement(head_t, "link", rel="stylesheet", type="text/css", href=CSS_FILE)
+
+        body_t = ET.SubElement(page_t, "body")
+        body_t.append(content)
+
+        self.contents.append((CONTENT_ROOT + path, xml_to_str(page_t)))
+        self._add_to_manifest_and_spine(page_id, path)
+
+        if toc_title is not None:
+            li = ET.Element("li")
+            link = ET.SubElement(li, "a", href=path)
+            link.text = toc_title
+            self.toc.append(li)
+
+
     def generate_epub(self, path: str):
+        """
+        Generates the EPUB and saves it at the provided path.
+        """
         contents = self.contents + [
             (CONTENT_ROOT + TOC_PATH, self._generate_toc()),
             (PACKAGE_PATH, self._generate_pkg_opf()),
