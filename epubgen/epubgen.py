@@ -33,6 +33,7 @@ class EPUB:
     - add_page: add content to the EPUB
     - add_font: add a font to the EPUB
     - add_image: embed images in the EPUB
+    - add_cover: add a cover image for the EPUB
     - generate_epub: generate the EPUB file
     """
 
@@ -167,6 +168,20 @@ class EPUB:
         meta_t.text = now
 
         return metadata
+
+    def add_cover(self, image_type:str, cover_content: bytes):
+        """
+        Add a cover image for the EPUB
+
+        - image_type: the encoding of the image (jpg, png, ...)
+        - cover_content: the raw image content as bytes
+        """
+
+        COVER = "cover"
+        path = f"{COVER}.{image_type}"
+        ET.SubElement(self.metadata, "meta", name=COVER, content=COVER)
+        self._add_to_manifest(COVER, path, f"image/{image_type}")
+        self.contents.append((CONTENT_ROOT + path, cover_content))
 
     def add_image(self, id: str, path: str, image_content: bytes):
         """
