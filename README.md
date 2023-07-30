@@ -4,7 +4,7 @@ Small library to generate epub files easily
 
 ## Usage:
 
-```
+```python
 from epubgen import EPUB
 import xml.etree.ElementTree as ET
 
