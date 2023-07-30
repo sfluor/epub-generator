@@ -31,6 +31,7 @@ class EPUB:
     Methods
     -------
     - add_page: add content to the EPUB
+    - add_font: add a font to the EPUB
     - add_image: embed images in the EPUB
     - generate_epub: generate the EPUB file
     """
@@ -58,10 +59,6 @@ class EPUB:
             ("META-INF/container.xml", self._generate_container()),
         ]
 
-        if self.css:
-            self.contents.append((CONTENT_ROOT + CSS_FILE, self.css))
-            self._add_to_manifest("stylesheet", CSS_FILE, "text/css")
-
     def _generate_container(self) -> str:
         container = ET.Element(
             "container",
@@ -81,14 +78,14 @@ class EPUB:
         )
         return xml_to_str(container)
 
-    def _add_to_manifest(self, id, path, type, **kwargs):
+    def _add_to_manifest(self, id, path, media_type, **kwargs):
         ET.SubElement(
             self.manifest,
             "item",
             attrib={
                 "id": id,
                 "href": path,
-                "media-type": type,
+                "media-type": media_type,
                 **kwargs,
             },
         )
@@ -179,9 +176,32 @@ class EPUB:
         - path: the image path in the EPUB as a string (should contain a valid image extension)
         - image_content: the raw image content as bytes
         """
-        type = os.path.splitext(path)[1]
-        self._add_to_manifest(id, path, "image/" + type)
+        media_type = os.path.splitext(path)[1][1:]
+        self._add_to_manifest(id, path, f"image/{media_type}")
         self.contents.append((CONTENT_ROOT + path, image_content))
+
+    def add_font(self, family: str, style: str, weight: int, font_type: str, font_definition: bytes):
+        """
+        Embeds a font definition into the epub that can then be used in CSS.
+
+        - family: the font family, for instance "Times New Roman"
+        - style: the font style (normal, bold, italic)
+        - weight: the font weight (200, 400, 700, etc)
+        - type: font type (ttf, otf, woff, etc)
+        - font_definition: the raw font definition data (coming from the font file)
+        """
+        path = f"fonts/{family}-{style}-{weight}.{font_type}"
+        self._add_to_manifest(family, path, f"font/{font_type}")
+        self.contents.append((CONTENT_ROOT + path, font_definition))
+
+        # We also need to add the font to the stylesheet so that it's discoverable by the epub reader.
+        self.css += f"""
+@font-face {{
+    font-family : "{family}";
+    font-weight : {weight};
+    font-style: {style};
+    src : url("{path}");
+}}"""
 
     def add_page(self, content: ET.Element, toc_title=None):
         """
@@ -220,7 +240,12 @@ class EPUB:
         """
         Generates the EPUB and saves it at the provided path.
         """
-        contents = self.contents + [
+        contents = self.contents
+        if self.css:
+            contents.append((CONTENT_ROOT + CSS_FILE, self.css))
+            self._add_to_manifest("stylesheet", CSS_FILE, "text/css")
+
+        contents = contents + [
             (CONTENT_ROOT + TOC_PATH, self._generate_toc()),
             (PACKAGE_PATH, self._generate_pkg_opf()),
         ]
@@ -228,15 +253,3 @@ class EPUB:
         with ZipFile(path, "w") as zip:
             for path, content in contents:
                 zip.writestr(path, content)
-
-
-if __name__ == "__main__":
-    book = EPUB("Test", "author-test", "en")
-    first_page = ET.Element("p")
-    first_page.text = "first-page" + 10000 * "hello "
-    book.add_page(first_page, toc_title="First chapter")
-
-    second_page = ET.Element("p")
-    second_page.text = "second-page" + 10000 * "good morning ! "
-    book.add_page(second_page, toc_title="Second chapter")
-    book.generate_epub("test.epub")
