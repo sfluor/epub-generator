@@ -2,6 +2,7 @@ import os
 from zipfile import ZipFile
 from datetime import datetime
 import xml.etree.ElementTree as ET
+import io
 
 CONTENT_ROOT = "EPUB/"
 TOC_PATH = "toc.xhtml"
@@ -34,7 +35,8 @@ class EPUB:
     - add_font: add a font to the EPUB
     - add_image: embed images in the EPUB
     - add_cover: add a cover image for the EPUB
-    - generate_epub: generate the EPUB file
+    - to_disk: generate the EPUB file and writes it to disk
+    - to_bytes: generate the EPUB file and returns a BytesIO buffer
     """
 
     def __init__(
@@ -251,10 +253,7 @@ class EPUB:
             link.text = toc_title
             self.toc.append(li)
 
-    def generate_epub(self, path: str):
-        """
-        Generates the EPUB and saves it at the provided path.
-        """
+    def to_bytes(self) -> io.BytesIO:
         contents = self.contents
         if self.css:
             contents.append((CONTENT_ROOT + CSS_FILE, self.css))
@@ -265,6 +264,18 @@ class EPUB:
             (PACKAGE_PATH, self._generate_pkg_opf()),
         ]
 
-        with ZipFile(path, "w") as zip:
+        buf = io.BytesIO()
+        with ZipFile(buf, "a") as zip:
             for path, content in contents:
                 zip.writestr(path, content)
+
+        return buf
+
+    def to_disk(self, path: str):
+        """
+        Generates the EPUB and saves it at the provided path.
+        """
+        buf : io.BytesIO = self.to_bytes()
+
+        with open(path, "wb") as file:
+            file.write(buf.getvalue())
